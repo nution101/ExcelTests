@@ -3,6 +3,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
+using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 
 namespace ExcelAddIn1
@@ -13,104 +14,67 @@ namespace ExcelAddIn1
 
         private void Ribbon1_Load(object sender, RibbonUIEventArgs e)
         {
-            //this.button1.Click += new Microsoft.Office.Tools.Ribbon.RibbonControlEventHandler(
-            //    this.button1_Click);
-            
-
 
         }
 
         private async void button1_Click(object sender, RibbonControlEventArgs e)
         {
-            //Globals.ThisAddIn.Application. = true;
-            //actionsPane2.Hide();
-            //actionsPane1.Show();
-            //toggleButton1.Checked = false;
-
             var activeWorksheet = ((Microsoft.Office.Interop.Excel.Worksheet)Globals.ThisAddIn.Application.ActiveSheet);
-            //var rows = activeWorksheet.Rows;
-            //Console.WriteLine(rows.Count);
-            //foreach (var row in rows.Value)
-            //{
-            //    var i = row.ToString();
-            //    Console.WriteLine(i);
-            //}
-
-
-            //DateTime dt = DateTime.Now;
-            //var rng = Globals.ThisAddIn.Application.get_Range("D2");
-            //object value = rng.Value2;
-
-            //if (value != null)
-            //{
-            //    if (value is double)
-            //    {
-            //        dt = DateTime.FromOADate((double)value);
-            //    }
-            //    else
-            //    {
-            //        DateTime.TryParse((string)value, out dt);
-            //    }
-            //}
-
-            //rng.Value = dt;
-
-            //var colH = activeWorksheet.Columns[8];//Range of Column H
-            //int totalColumns = activeWorksheet.UsedRange.Columns.Count;
-            //int totalRows = activeWorksheet.UsedRange.Rows.Count;
-
+            
             var columnWidth = activeWorksheet.Columns[8].ColumnWidth;
             activeWorksheet.Columns[11].ColumnWidth = columnWidth;
 
             for (int i = 2; i < activeWorksheet.UsedRange.Rows.Count; i++)
             {
+                // get source column value
                 var Hvalue = activeWorksheet.Cells[i, 8].VALUE;
-                if(Hvalue != null)
+                //get result colum value
+                var Kvalue = activeWorksheet.Cells[i, 11].VALUE;
+                //blow away result clum value if any
+                if (Kvalue != null)
                 {
-                    //var rowJobj = activeWorksheet.Cells[i, 8];
-                    //var rowKobj = activeWorksheet.Cells[i, 11];
-
+                    activeWorksheet.Cells[i, 11].VALUE = "";
+                }
+                if (Hvalue != null)
+                {
+                    //set formatting
                     activeWorksheet.Cells[i, 11].WrapText = true;
                     activeWorksheet.Cells[i, 11].Font.Name = "Arial";
                     activeWorksheet.Cells[i, 11].Font.Color = System.Drawing.ColorTranslator.ToOle(System.Drawing.Color.Black);
                     activeWorksheet.Cells[i, 11].Style.HorizontalAlignment = Microsoft.Office.Interop.Excel.XlHAlign.xlHAlignLeft;
                     activeWorksheet.Cells[i, 11].Style.VerticalAlignment = Microsoft.Office.Interop.Excel.XlVAlign.xlVAlignTop;
                     activeWorksheet.Cells[i, 11].Font.Size = 10;
-
                     activeWorksheet.Cells[i, 11].RowHeight = activeWorksheet.Cells[i, 8].RowHeight;
-                    //activeWorksheet.Cells[i, 11].RowWidth = activeWorksheet.Cells[i, 8].RowWidth;
                     
-
+                    //run cleanup operations
                     var res = await CleanUp(activeWorksheet.Cells[i, 8].VALUE);
-
-                    var originalText = activeWorksheet.Cells[i, 8].VALUE;
-                    if (originalText == res) 
+                    
+                    // check if its result has any changes
+                    if (Hvalue == res) 
                         continue;
 
+                    //if there is a difference, set the K col value
                     if(!string.IsNullOrEmpty(res))
                     {
                         activeWorksheet.Cells[i, 11].VALUE = res;
                     }
-                    else
-                    {
-                        var test = 1;
-                    }
                 }
             }
+
+            //popout change count
             if (changeCount > 0)
             {
-                System.Windows.Forms.MessageBox.Show(changeCount + " Changes applied");
+                System.Windows.Forms.MessageBox.Show(changeCount + " Changes applied.");
             }
-
-            //System.Windows.Forms.MessageBox.Show(dt.ToString());
-            //firstRow.EntireRow.Insert(Microsoft.Office.Interop.Excel.XlInsertShiftDirection.xlShiftDown);
-            //Microsoft.Office.Interop.Excel.Range newFirstRow = activeWorksheet.get_Range("A1");
-            //newFirstRow.Value2 = "This text was added by using code";
+            else
+                System.Windows.Forms.MessageBox.Show("No necessary changes were found.");
         }
 
         public async Task<string> CleanUp(string inputRow)
         {
             string outputRow = inputRow;
+            outputRow = NumberPresentation(outputRow);
+            outputRow = CleanWording(outputRow);
             outputRow = Punctuation(outputRow);
 
             return outputRow;
@@ -119,7 +83,7 @@ namespace ExcelAddIn1
         public string Punctuation(string input)
         {
             var output = input;
-            
+            output = output.Trim(); 
             if (!output.EndsWith(".")) output += ".";
             output.Replace(",.", ".");
             output.Replace(".,", ".");
@@ -130,6 +94,94 @@ namespace ExcelAddIn1
             output.Replace(" ) ", ") ");
             output.Replace(" ( ", " (");
             output.Replace(" ; ", "; ");
+            output = Regex.Replace(output, @"\r\n?|\n", "");
+
+            if (output != input) changeCount++;
+            return output;
+        }
+
+        public string NumberPresentation(string input)
+        {
+            var output = input;
+            output.Replace("three hundred and sixty five (365)", "365");
+            output.Replace("three hundred sixty-five (365)", "365");
+            output.Replace("three hundred and sixty-five (365)", "365");
+            output.Replace("three hundred and sixty- five (365)", "365");
+            output.Replace("three hundred sixty five (365)", "365");
+            output.Replace("three-hundred-sixty-five (365)", "365");
+            output.Replace("365days", "365 days");
+            output.Replace("3 year", "three year");
+            output.Replace("fifteen minute", "15 minute");
+            output.Replace("fifty year", "50 year");
+            output.Replace("thirty minute", "30 minute");
+            output.Replace("twenty-four hour", "24 hour");
+            output.Replace("twenty four hour", "24 hour");
+            output.Replace("forty eight hour", "48 hour");
+            output.Replace("forty-eight hour", "48 hour");
+            output.Replace("seventy-two hour", "72 hour");
+            output.Replace("seventy two hour", "72 hour");
+            output.Replace("fourteen character", "14 character");
+            output.Replace("7 day", "seven day");
+            output.Replace("thirty day", "30 day");
+            output.Replace("forty-five day", "45 day");
+            output.Replace("forty five day", "45 day");
+            output.Replace("sixty day", "60 day");
+            output.Replace("ninety day", "90 day");
+            output.Replace("3-year", "three year");
+            output.Replace("fifteen minute", "15 minute");
+            output.Replace("fifty year", "50 year");
+            output.Replace("thirty minute", "30 minute");
+            output.Replace("twenty four hour", "24 hour");
+            output.Replace("forty eight hour", "48 hour");
+            output.Replace("seventy two hour", "72 hour");
+            output.Replace("fourteen character", "14 character");
+            output.Replace("7 day", "seven day");
+            output.Replace("thirty day", "30 day");
+            output.Replace("forty five day", "45 day");
+            output.Replace("sixty day", "60 day");
+            output.Replace("ninety day", "90 day");
+
+            if (output != input) changeCount++;
+            return output;
+        }
+
+        public string CleanWording(string input)
+        {
+            var output = input;
+
+            output.Replace("third party report", "third-party report");
+            output.Replace("third party provider", "third-party provider");
+            output.Replace("third party personnel", "third-party personnel");
+            output.Replace("third party user", "third-party user");
+            output.Replace("third party service", "third-party support");
+            output.Replace("third party service", "third-party service");
+            output.Replace("third party system", "third-party system");
+            output.Replace("third party contact", "third-party contact");
+            output.Replace("high risk locations", "high-risk locations");
+            output.Replace("decision making roles", "decision-making roles");
+            output.Replace("<p>", "");
+            output.Replace("</p>", "");
+            output.Replace("program(s) is (are)", "programs are");
+            output.Replace("the organizations", "the organization's");
+            output.Replace("third-parties", "third parties");
+            output.Replace("counter-intelligence", "counterintelligence");
+            output.Replace("personally-owned", "personally owned");
+            output.Replace("up-to-date", "up to date");
+            output.Replace("rol and", "role and");
+            output.Replace("black list", "blacklist");
+            output.Replace("internet", "Internet");
+            output.Replace("rol, and", "role, and");
+            output.Replace("controle ", "control ");
+            output.Replace(" a updated", " an updated");
+            output.Replace("activies", "activities");
+            output.Replace("senor member", "senior member");
+            output.Replace("endored", "endorsed");
+            output.Replace("hard-drives", "hard drives");
+            output.Replace("Group, shared or generic", "Group, shared, or generic");
+            output.Replace("commonly-used", "commonly used");
+            output.Replace("cryptographically-protected", "cryptographically protected");
+            output.Replace("Visitor and third-party support access is recorded", "Visitor and third-party support access are recorded");
+
             if (output != input) changeCount++;
             return output;
         }
