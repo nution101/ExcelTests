@@ -30,7 +30,10 @@ namespace ExcelAddIn1
                 var Hvalue = activeWorksheet.Cells[i, 8].VALUE;
                 //get result colum value
                 var Kvalue = activeWorksheet.Cells[i, 11].VALUE;
-                //blow away result clum value if any
+                // get element column
+                var Gvalue = activeWorksheet.Cells[i, 7].VALUE;
+
+                //blow away result column value if any
                 if (Kvalue != null)
                 {
                     activeWorksheet.Cells[i, 11].VALUE = "";
@@ -48,16 +51,30 @@ namespace ExcelAddIn1
                     
                     //run cleanup operations
                     var res = await CleanUp(activeWorksheet.Cells[i, 8].VALUE);
+
+                    
                     
                     // check if its result has any changes
-                    if (Hvalue == res) 
-                        continue;
+                    //if (Hvalue == res) 
+                    //    continue;
 
                     //if there is a difference, set the K col value
                     if(!string.IsNullOrEmpty(res))
                     {
                         activeWorksheet.Cells[i, 11].VALUE = res;
                     }
+
+                    //review element count
+                    if (Gvalue != null)
+                    {
+                        string elementResults = ElementCount(res, int.Parse(Gvalue));
+                        if (elementResults.Length > 0)
+                        {
+                            activeWorksheet.Cells[i, 11].Font.Color = System.Drawing.ColorTranslator.ToOle(System.Drawing.Color.Red);
+                            activeWorksheet.Cells[i, 11].VALUE += elementResults;
+                        }
+                    }
+                    else activeWorksheet.Cells[i, 11].VALUE += " *NO ELEMENT COUNT";
                 }
             }
 
@@ -80,6 +97,64 @@ namespace ExcelAddIn1
             return outputRow;
         }
 
+        public string ElementCount(string input, int elementCount)
+        {
+            string output = "";
+            var foundError = false;
+            var highestElementInt = 0;
+            
+            //valid element counts
+            var elementList = new List<string> { " 1\\) ", " 2\\) ", " 3\\) ", " 4\\) ", " 5\\) ", " 6\\) ", " 7\\) ", " 8\\) ", " 9\\) " };
+            
+            //check valid element counts
+            foreach(var item in elementList)
+            {
+                var stripped = item.Replace(@"\", "").Replace(@"\", "");
+                if (input.Contains(stripped))
+                {
+                    var occuranceCount = Regex.Matches(input, @item).Count;
+                    if (occuranceCount > 1)
+                    {
+                        output += " *DUPLICATE ELEMENT NUMBERING. " + item + " occurs " + occuranceCount + " times.";
+                        foundError = true;
+                    }
+                    
+                    var elementInt = int.Parse(stripped.Trim().Replace(")", ""));
+                    if (highestElementInt < elementInt) 
+                        highestElementInt = elementInt;
+                }
+            }
+
+            //check if the element count matches number of elements expected
+            if (elementCount != highestElementInt)
+            {
+                if (highestElementInt > elementCount)
+                    output += " *" + highestElementInt + " IS GREATER THAN EXPECTED COUNT " + elementCount;
+                if (highestElementInt < elementCount)
+                    output += " *" + highestElementInt + " IS LESS THAN EXPECTED COUNT " + elementCount;
+            }
+
+            //create list of bad elements
+            var badElementList = new List<string>();
+            for (int i = 10; i < 200; i++)
+            {
+                badElementList.Add(" " + i + ") ");
+            }
+
+            //check for bad elements
+            foreach (var item in badElementList)
+            {
+                if (foundError) continue;
+                if (input.Contains(item))
+                {
+                    output += " *BAD ELEMENT"+ item + "is > 9)";
+                    foundError = true;
+                }
+            }
+
+            return output;
+        }
+
         public string Punctuation(string input)
         {
             var output = input;
@@ -91,6 +166,7 @@ namespace ExcelAddIn1
             output.Replace(" , ", ", ");
             output.Replace(" .", ".");
             output.Replace("..", ".");
+            output.Replace(".)", ")");
             output.Replace(" ) ", ") ");
             output.Replace(" ( ", " (");
             output.Replace(" ; ", "; ");
@@ -110,6 +186,7 @@ namespace ExcelAddIn1
             output.Replace("three hundred sixty five (365)", "365");
             output.Replace("three-hundred-sixty-five (365)", "365");
             output.Replace("365days", "365 days");
+            output.Replace("[365]", "365");
             output.Replace("3 year", "three year");
             output.Replace("fifteen minute", "15 minute");
             output.Replace("fifty year", "50 year");
