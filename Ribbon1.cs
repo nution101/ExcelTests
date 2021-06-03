@@ -1,16 +1,20 @@
 ﻿using Microsoft.Office.Tools.Ribbon;
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
+using Microsoft.Win32;
+//using WeCantSpell.Hunspell;
 
 namespace ExcelAddIn1
 {
     public partial class Ribbon1
     {
-        public int changeCount = 0;
+        public int ChangeCount;
+        //public WordList Dictionary = WordList.CreateFromFiles(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, @"Resources\", "English (American).dic"));
 
         private void Ribbon1_Load(object sender, RibbonUIEventArgs e)
         {
@@ -19,6 +23,8 @@ namespace ExcelAddIn1
 
         private async void button1_Click(object sender, RibbonControlEventArgs e)
         {
+            
+
             var activeWorksheet = ((Microsoft.Office.Interop.Excel.Worksheet)Globals.ThisAddIn.Application.ActiveSheet);
             
             var columnWidth = activeWorksheet.Columns[8].ColumnWidth;
@@ -32,6 +38,8 @@ namespace ExcelAddIn1
                 var Kvalue = activeWorksheet.Cells[i, 11].VALUE;
                 // get element column
                 var Gvalue = activeWorksheet.Cells[i, 7].VALUE;
+                if (Gvalue == null || string.IsNullOrEmpty(Gvalue.ToString())) 
+                    Gvalue = "0";
 
                 //blow away result column value if any
                 if (Kvalue != null)
@@ -43,48 +51,62 @@ namespace ExcelAddIn1
                     //set formatting
                     activeWorksheet.Cells[i, 11].WrapText = true;
                     activeWorksheet.Cells[i, 11].Font.Name = "Arial";
-                    activeWorksheet.Cells[i, 11].Font.Color = System.Drawing.ColorTranslator.ToOle(System.Drawing.Color.Black);
+                    activeWorksheet.Cells[i, 11].Font.Color = System.Drawing.ColorTranslator.ToOle(System.Drawing.Color.Blue);
+                    activeWorksheet.Cells[i, 11].Font.Size = 10;
                     activeWorksheet.Cells[i, 11].Style.HorizontalAlignment = Microsoft.Office.Interop.Excel.XlHAlign.xlHAlignLeft;
                     activeWorksheet.Cells[i, 11].Style.VerticalAlignment = Microsoft.Office.Interop.Excel.XlVAlign.xlVAlignTop;
-                    activeWorksheet.Cells[i, 11].Font.Size = 10;
                     activeWorksheet.Cells[i, 11].RowHeight = activeWorksheet.Cells[i, 8].RowHeight;
                     
                     //run cleanup operations
                     var res = await CleanUp(activeWorksheet.Cells[i, 8].VALUE);
 
-                    
-                    
-                    // check if its result has any changes
-                    //if (Hvalue == res) 
-                    //    continue;
-
                     //if there is a difference, set the K col value
-                    if(!string.IsNullOrEmpty(res))
+                    if(!string.IsNullOrEmpty(res) && activeWorksheet.Cells[i, 8].VALUE != res)
                     {
                         activeWorksheet.Cells[i, 11].VALUE = res;
                     }
+                    else activeWorksheet.Cells[i, 11].VALUE = "🗸";
 
+
+                    //repopulate Kvalue
+                    Kvalue = activeWorksheet.Cells[i, 11].VALUE;
+                    
                     //review element count
-                    if (Gvalue != null)
+                    string elementResults = ElementCount(res, int.Parse(Gvalue.ToString()));
+                    if (elementResults.Length > 0)
                     {
-                        string elementResults = ElementCount(res, int.Parse(Gvalue));
-                        if (elementResults.Length > 0)
-                        {
-                            activeWorksheet.Cells[i, 11].Font.Color = System.Drawing.ColorTranslator.ToOle(System.Drawing.Color.Red);
-                            activeWorksheet.Cells[i, 11].VALUE += elementResults;
-                        }
+                        var startChar = Kvalue.ToString().Length + 1;
+
+                        Microsoft.Office.Interop.Excel.Range rng = (Microsoft.Office.Interop.Excel.Range) Globals.ThisAddIn.Application.ActiveSheet.Cells[i, 11];
+                        rng.Value += elementResults;
+                        var elemntEndChar = elementResults.Length + startChar;
+                        rng.Characters[startChar, elemntEndChar].Font.Color =System.Drawing.ColorTranslator.ToOle(System.Drawing.Color.Red);
+                        
+                        ////review spelling
+                        //var spellingErrors = CheckSpelling(activeWorksheet.Cells[i, 8].VALUE.ToString());
+                        //if (spellingErrors.Count > 0)
+                        //{
+                        //    Microsoft.Office.Interop.Excel.Range rng2 = (Microsoft.Office.Interop.Excel.Range)Globals.ThisAddIn.Application.ActiveSheet.Cells[i, 12];
+                        //    foreach (var line in spellingErrors)
+                        //    {
+                        //        rng2.Value += line;
+                        //    }
+                            
+                        //    var spellEndChar = rng2.Value.ToString().Length;
+                        //    rng2.Characters[0, spellEndChar].Font.Color = System.Drawing.ColorTranslator.ToOle(System.Drawing.Color.Green);
+                            
+                        //}
                     }
-                    else activeWorksheet.Cells[i, 11].VALUE += " *NO ELEMENT COUNT";
                 }
             }
 
             //popout change count
-            if (changeCount > 0)
-            {
-                System.Windows.Forms.MessageBox.Show(changeCount + " Changes applied.");
-            }
-            else
-                System.Windows.Forms.MessageBox.Show("No necessary changes were found.");
+            //if (ChangeCount > 0)
+            //{
+            //    System.Windows.Forms.MessageBox.Show(ChangeCount + " Changes applied.");
+            //}
+            //else
+            //    System.Windows.Forms.MessageBox.Show("No necessary changes were found.");
         }
 
         public async Task<string> CleanUp(string inputRow)
@@ -100,6 +122,13 @@ namespace ExcelAddIn1
         public string ElementCount(string input, int elementCount)
         {
             string output = "";
+
+            if (elementCount < 1)
+            { 
+                output += "\n\r" + " *NO ELEMENT COUNT";
+                return output;
+            }
+            
             var foundError = false;
             var highestElementInt = 0;
             
@@ -115,7 +144,7 @@ namespace ExcelAddIn1
                     var occuranceCount = Regex.Matches(input, @item).Count;
                     if (occuranceCount > 1)
                     {
-                        output += " *DUPLICATE ELEMENT NUMBERING. " + item + " occurs " + occuranceCount + " times.";
+                        output += "\n\r" + " *DUPLICATE ELEMENT NUMBERING." + stripped + "occurs " + occuranceCount + " times.";
                         foundError = true;
                     }
                     
@@ -129,9 +158,9 @@ namespace ExcelAddIn1
             if (elementCount != highestElementInt)
             {
                 if (highestElementInt > elementCount)
-                    output += " *" + highestElementInt + " IS GREATER THAN EXPECTED COUNT " + elementCount;
+                    output += "\n\r" + " *" + highestElementInt + " IS GREATER THAN EXPECTED ELEMENT COUNT " + elementCount;
                 if (highestElementInt < elementCount)
-                    output += " *" + highestElementInt + " IS LESS THAN EXPECTED COUNT " + elementCount;
+                    output += "\n\r" + " *" + highestElementInt + " IS LESS THAN EXPECTED ELEMENT COUNT " + elementCount;
             }
 
             //create list of bad elements
@@ -147,7 +176,7 @@ namespace ExcelAddIn1
                 if (foundError) continue;
                 if (input.Contains(item))
                 {
-                    output += " *BAD ELEMENT"+ item + "is > 9)";
+                    output += "\n\r" + " *BAD ELEMENT" + item + "is > 9)";
                     foundError = true;
                 }
             }
@@ -172,7 +201,7 @@ namespace ExcelAddIn1
             output.Replace(" ; ", "; ");
             output = Regex.Replace(output, @"\r\n?|\n", "");
 
-            if (output != input) changeCount++;
+            if (output != input) ChangeCount++;
             return output;
         }
 
@@ -218,22 +247,14 @@ namespace ExcelAddIn1
             output.Replace("sixty day", "60 day");
             output.Replace("ninety day", "90 day");
 
-            if (output != input) changeCount++;
+            if (output != input) ChangeCount++;
             return output;
         }
 
         public string CleanWording(string input)
         {
             var output = input;
-
-            output.Replace("third party report", "third-party report");
-            output.Replace("third party provider", "third-party provider");
-            output.Replace("third party personnel", "third-party personnel");
-            output.Replace("third party user", "third-party user");
-            output.Replace("third party service", "third-party support");
-            output.Replace("third party service", "third-party service");
-            output.Replace("third party system", "third-party system");
-            output.Replace("third party contact", "third-party contact");
+            output.Replace("third party", "third-party");
             output.Replace("high risk locations", "high-risk locations");
             output.Replace("decision making roles", "decision-making roles");
             output.Replace("<p>", "");
@@ -259,10 +280,70 @@ namespace ExcelAddIn1
             output.Replace("cryptographically-protected", "cryptographically protected");
             output.Replace("Visitor and third-party support access is recorded", "Visitor and third-party support access are recorded");
 
-            if (output != input) changeCount++;
+            if (output != input) ChangeCount++;
             return output;
         }
 
+        public async Task<int> LevenshteinDistance(string original, string other)
+        {
+            // Compute Levenshtein distance
+            int n = original.Length;
+            int m = other.Length;
+            int[,] d = new int[n + 1, m + 1];
+            int cost;
+            if (n == 0) return m;
+            if (m == 0) return n;
+            for (int i = 0; i <= n; d[i, 0] = i++) ;
+            for (int j = 0; j <= m; d[0, j] = j++) ;
+            for (int i = 1; i <= n; i++)
+            {
+                for (int j = 1; j <= m; j++)
+                {
+                    cost = (other.Substring(j - 1, 1) == original.Substring(i - 1, 1) ? 0 : 1);
+                    d[i, j] = System.Math.Min(System.Math.Min(d[i - 1, j] + 1, d[i, j - 1] + 1),
+                        d[i - 1, j - 1] + cost);
+                }
+            }
+            return d[n, m];
+        }
 
+        //public List<string> CheckSpelling(string input)
+        //{
+        //    //cleanup
+        //    var elements = new List<string>();
+        //    for (int i = 0; i < 50; i++)
+        //    {
+        //        input = input.Replace(i + ")","");
+        //    }
+        //    input = input.Replace("'s", "");
+        //    input = input.Replace("’s", "");
+        //    input = input.Replace(",", "");
+        //    input = input.Replace(".", "");
+        //    input = input.Replace(")", "");
+        //    input = input.Replace("(", "");
+        //    input = input.Replace(",", "");
+        //    input = input.Replace("  ", " ");
+
+        //    //check
+        //    var wordList = input.Split(' ').ToList();
+        //    var correctionList = new List<string>();
+        //    foreach (var word in wordList)
+        //    {
+                
+        //        bool isOk = Dictionary.Check(word);
+        //        if (!isOk)
+        //        {
+        //            if(string.IsNullOrEmpty(word)) continue;
+        //            correctionList.Add("\n\r" + "---spell---");
+        //            correctionList.Add("\n\r" + "? " + word);
+        //            foreach (var sWord in Dictionary.Suggest(word))
+        //            {
+        //                correctionList.Add("\n\r" + sWord);
+        //            }
+        //        }
+        //    }
+        //    return correctionList;
+        //}
+        
     }
 }
